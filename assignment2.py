@@ -179,7 +179,7 @@ if st.button('Run Prediction'):
     st.pyplot(plt)
 
     # Fetch and display stock news
-    st.subheader("Latest Malaysia Stock News")
+    st.subheader("Latest Stock News")
     news_list = fetch_stock_news()
     if news_list:
         for news in news_list:
