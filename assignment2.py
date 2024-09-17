@@ -30,19 +30,20 @@ def fetch_stock_data(stock):
     df.columns = ['Date', 'Close Price', 'Volume']
     return df
 
+# Process stock data and generate predictions
 def process_stock_data(stock):
     df = fetch_stock_data(stock)
     today_close = df.iloc[-1]['Close Price']
 
-    # Prepare the tables and chart data for the 3 indicators
+    # Prepare indicators and model predictions
     indicators = ['CCI', 'OBV', 'BollingerBands']
     predicted_close_all = []
     table_rows = []
+    trade_analysis_rows = []
 
     for indicator in indicators:
         # Add different technical indicators
         if indicator == 'CCI':
-            # Calculate CCI with high and low prices
             df[indicator] = ta.trend.cci(df['Close Price'], df['Close Price'], df['Close Price'], window=20)
         elif indicator == 'OBV':
             df[indicator] = ta.volume.on_balance_volume(df['Close Price'], df['Volume'])
@@ -51,21 +52,20 @@ def process_stock_data(stock):
             df['BB_upper'] = bb_bands.bollinger_hband()
             df['BB_middle'] = bb_bands.bollinger_mavg()
             df['BB_lower'] = bb_bands.bollinger_lband()
-            df[indicator] = df['BB_middle']  # Use middle Bollinger band as the indicator
+            df[indicator] = df['BB_middle']
 
-        # Create lag features (3 days) for the stock price and indicator
+        # Create lag features
         for i in range(1, 4):
             df[f'close_lag_{i}day'] = df['Close Price'].shift(i)
             df[f'{indicator}_lag_{i}day'] = df[indicator].shift(i)
-        
-        # Create lead features (for next 3 days)
+
+        # Create lead features
         for i in range(1, 4):
             df[f'close_next_{i}day'] = df['Close Price'].shift(-i)
 
-        # Drop rows with missing values due to lags and leads
+        # Drop rows with missing values
         df.dropna(inplace=True)
 
-        # Prepare features and targets
         features = df[['close_lag_3day', 'close_lag_2day', 'close_lag_1day', indicator]].values
         targets = df[['close_next_1day', 'close_next_2day', 'close_next_3day']].values
 
@@ -73,47 +73,57 @@ def process_stock_data(stock):
         rfe = RFE(estimator=LinearRegression(), n_features_to_select=3)
         rfe.fit(features[:-1], targets[:-1])
 
-        # Classification Algorithms
-        df['classification_target'] = (df['close_next_1day'] > df['Close Price']).astype(int)
-        X_train, X_test, y_train, y_test = train_test_split(features[:-1], df['classification_target'][:-1], test_size=0.3, random_state=42)
-
-        log_model = LogisticRegression()
-        log_model.fit(X_train, y_train)
-
-        rf_model = RandomForestClassifier()
-        rf_model.fit(X_train, y_train)
-
-        # Regression Model
+        # Linear Regression Prediction
         model = LinearRegression()
         model.fit(features[:-1], targets[:-1])
-
-        # Predict the next 3 days' close prices using the latest row
         predicted_close = model.predict(features[-1].reshape(1, -1))[0]
         predicted_close_all.append(predicted_close)
 
-        # Create final table row for each indicator
+        # Create buy/sell decisions based on price movement
+        decisions = ['Buy' if pred > today_close else 'Sell' for pred in predicted_close]
+        predictions = ['Upward' if pred > today_close else 'Downward' for pred in predicted_close]
+
+        # Create the final formatted table row for each indicator
         table_row = pd.DataFrame({
-            'Stock': [stock],
-            'Indicator': [indicator],
+            'Stock': stock,
+            'Indicator': indicator,
             'close_lag_3day': [df.iloc[-1]['close_lag_3day']],
             'close_lag_2day': [df.iloc[-1]['close_lag_2day']],
             'close_lag_1day': [df.iloc[-1]['close_lag_1day']],
             f'{indicator}_lag_3day': [df.iloc[-1][f'{indicator}_lag_3day']],
             f'{indicator}_lag_2day': [df.iloc[-1][f'{indicator}_lag_2day']],
             f'{indicator}_lag_1day': [df.iloc[-1][f'{indicator}_lag_1day']],
-            'today_close': [today_close],  # Ensure today_close is the same across indicators
+            'today_close': [today_close],
             'close_next_1day': [predicted_close[0]],
             'close_next_2day': [predicted_close[1]],
             'close_next_3day': [predicted_close[2]],
-            'PREDICTION': ['Upward' if predicted_close[0] > today_close else 'Downward'],
-            'DECISION': ['Buy' if predicted_close[0] > today_close else 'Sell']
+            'PREDICTION': [predictions[0]],
+            'DECISION': [decisions[0]]
         })
 
         table_rows.append(table_row)
 
-    return table_rows, df
+        # Calculate Trade Profit and Stop-Loss
+        day_trade_profit = ((predicted_close[0] - today_close) / today_close) * 100
+        week_trade_profit = ((predicted_close[2] - today_close) / today_close) * 100
+        stop_loss = today_close * 0.95
+        sell_recommendation = predicted_close[0] * 1.05
 
-# Streamlit UI integration
+        trade_row = pd.DataFrame({
+            'Stock': stock,
+            'Indicator': indicator,
+            'Day Trade Profit (%)': [day_trade_profit],
+            'Week Trade Profit (%)': [week_trade_profit],
+            'Trade Suggestion': ['Day Trade' if day_trade_profit > week_trade_profit else 'Week Trade'],
+            'Stop-Loss': [stop_loss],
+            'Sell Recommendation': [sell_recommendation]
+        })
+
+        trade_analysis_rows.append(trade_row)
+
+    return table_rows, trade_analysis_rows, predicted_close_all, today_close
+
+# Streamlit UI
 st.title("Stock Prediction App")
 
 # Stock selection dropdown
@@ -122,29 +132,27 @@ selected_stock = st.selectbox('Select a stock:', stocks)
 # Button to fetch and process stock data
 if st.button('Run Prediction'):
     # Fetch and process stock data
-    table_rows, df = process_stock_data(selected_stock)
+    table_rows, trade_analysis_rows, predicted_close_all, today_close = process_stock_data(selected_stock)
 
     # Display stock data
-    st.subheader(f"{selected_stock} - Stock Data")
-    st.dataframe(df.tail())  # Display the last few rows of the DataFrame
+    for i, indicator in enumerate(['CCI', 'OBV', 'BollingerBands']):
+        st.subheader(f"{selected_stock} - Indicator: {indicator}")
+        st.dataframe(table_rows[i])
 
-    # Display the tables for each indicator
-    for row in table_rows:
-        st.subheader(f"{selected_stock} - Indicator: {row['Indicator'][0]}")
-        st.dataframe(row)
+        st.subheader(f"Trade Analysis for {indicator}")
+        st.dataframe(trade_analysis_rows[i])
 
     # Plot predictions for the next 3 days
     plt.figure(figsize=(10, 6))
     days = ['Today', 'Day 1', 'Day 2', 'Day 3']
-    for i in range(len(table_rows)):
-        predicted_close = table_rows[i]['close_next_1day'].values[0], table_rows[i]['close_next_2day'].values[0], table_rows[i]['close_next_3day'].values[0]
-        plt.plot(days, [today_close] + list(predicted_close), marker='o', label=f"{row['Indicator'][0]} Prediction")
+    for i, indicator in enumerate(['CCI', 'OBV', 'BollingerBands']):
+        predicted_close = predicted_close_all[i]
+        plt.plot(days, [today_close] + list(predicted_close), marker='o', label=f'{indicator} Prediction')
 
-    plt.title(f"{selected_stock} - 3-Day Close Price Predictions")
+    plt.title(f"{selected_stock} - 3-Day Close Price Predictions (3 Indicators)")
     plt.xlabel("Days")
     plt.ylabel("Close Price")
-    plt.grid(True)
     plt.legend()
+    plt.grid(True)
     st.pyplot(plt)
 
-# Optional: Fetch and display stock news
