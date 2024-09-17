@@ -23,17 +23,18 @@ start_date = end_date - timedelta(days=365)
 def fetch_stock_data(stock):
     df = yf.download(stock, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), interval='1d')
     # Use the last available date if today is not a trading day
-    if df.index[-1].date() < end_date.date():
-        print(f"Latest market data for {stock} is from {df.index[-1].date()}, using that as the current day.")
+    last_available_date = df.index[-1].date()
+    if last_available_date < end_date.date():
+        print(f"Latest market data for {stock} is from {last_available_date}, using that as the current day.")
     
     df['Date'] = df.index.date
     df = df[['Date', 'Close', 'Volume']].copy()
     df.columns = ['Date', 'Close Price', 'Volume']
-    return df
+    return df, last_available_date  # Return the last available date as well
 
 # Process stock data and generate predictions
 def process_stock_data(stock):
-    df = fetch_stock_data(stock)
+    df, last_available_date = fetch_stock_data(stock)
     today_close = df.iloc[-1]['Close Price']
 
     # Prepare indicators and model predictions
@@ -122,7 +123,7 @@ def process_stock_data(stock):
 
         trade_analysis_rows.append(trade_row)
 
-    return table_rows, trade_analysis_rows, predicted_close_all, today_close
+    return table_rows, trade_analysis_rows, predicted_close_all, today_close, last_available_date
 
 # Fetch Stock News using NewsAPI
 def fetch_stock_news():
@@ -154,7 +155,10 @@ selected_stock = st.selectbox('Select a stock:', stocks)
 # Button to fetch and process stock data
 if st.button('Run Prediction'):
     # Fetch and process stock data
-    table_rows, trade_analysis_rows, predicted_close_all, today_close = process_stock_data(selected_stock)
+    table_rows, trade_analysis_rows, predicted_close_all, today_close, last_available_date = process_stock_data(selected_stock)
+
+    # Display current date being used
+    st.subheader(f"Using data as of: {last_available_date}")
 
     # Display stock data
     for i, indicator in enumerate(['CCI', 'OBV', 'BollingerBands']):
@@ -179,7 +183,7 @@ if st.button('Run Prediction'):
     st.pyplot(plt)
 
     # Fetch and display stock news
-    st.subheader("Latest Stock News")
+    st.subheader("Latest Malaysia Stock News")
     news_list = fetch_stock_news()
     if news_list:
         for news in news_list:
@@ -189,6 +193,7 @@ if st.button('Run Prediction'):
             st.write("\n")
     else:
         st.write("No news found.")
+
 
 
 
