@@ -10,6 +10,7 @@ from sklearn.metrics import accuracy_score
 import ta
 import matplotlib.pyplot as plt
 import streamlit as st
+import requests
 
 # Define the stocks
 stocks = ['6742.KL', '1155.KL', '5398.KL', '1818.KL', '0083.KL']
@@ -123,6 +124,27 @@ def process_stock_data(stock):
 
     return table_rows, trade_analysis_rows, predicted_close_all, today_close
 
+# Fetch Stock News using NewsAPI
+def fetch_stock_news():
+    api_key = "473567c8d990486db8d201a392933b7b"  # Your NewsAPI key
+    url = f"https://newsapi.org/v2/everything?q=malaysia stock&apiKey={api_key}"
+    response = requests.get(url)
+    news_data = response.json()
+    
+    if news_data['status'] == 'ok':
+        articles = news_data['articles']
+        news_list = []
+        for article in articles[:5]:  # Display top 5 articles
+            news_list.append({
+                "Title": article['title'],
+                "Source": article['source']['name'],
+                "Published At": article['publishedAt'],
+                "URL": article['url']
+            })
+        return news_list
+    else:
+        return []
+
 # Streamlit UI
 st.title("Stock Prediction App")
 
@@ -155,4 +177,18 @@ if st.button('Run Prediction'):
     plt.legend()
     plt.grid(True)
     st.pyplot(plt)
+
+    # Fetch and display stock news
+    st.subheader("Latest Malaysia Stock News")
+    news_list = fetch_stock_news()
+    if news_list:
+        for news in news_list:
+            st.write(f"**Title**: [{news['Title']}]({news['URL']})")
+            st.write(f"Source: {news['Source']}")
+            st.write(f"Published At: {news['Published At']}")
+            st.write("\n")
+    else:
+        st.write("No news found.")
+
+
 
