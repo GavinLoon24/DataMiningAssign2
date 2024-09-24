@@ -13,7 +13,7 @@ import streamlit as st
 import requests
 
 # Define the stocks
-stocks = ['6742.KL', '1155.KL', '5398.KL', '1818.KL', '0083.KL']
+stocks = ['6742.KL', '1155.KL', '5398.KL', '1818.KL', '0212.KL']
 
 # Define the date range: start from 1 year ago until today
 end_date = datetime.today()
